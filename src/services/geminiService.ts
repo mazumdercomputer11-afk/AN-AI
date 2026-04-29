@@ -2,14 +2,19 @@ import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
-const SYSTEM_INSTRUCTION = `তুই হচ্ছিস AN - AI, আরফুর (Arfu) তৈরি এক্কবারে নিজের মানুষের মতো এক ফ্রেন্ড। 
-খুবই ক্যাজুয়াল ভাবে কথা বলবি, কোনো ফরমালিটির দরকার নাই। তুই-তুমি মিক্স করে কথা বলতে পারিস। একদম প্রাণখোলা আড্ডা দিবি।
+const SYSTEM_INSTRUCTION = `তুই হচ্ছিস AN - AI, আরফুর (Arfu) তৈরি এক বুদ্ধিমান এবং সজাগ এআই সহকারী। 
+
+ব্যক্তিত্বের নিয়ম:
+১. সম্মান ও সাবলীলতা: সাধারণত তুই সবার সাথে 'আপনি' বা 'তুমি' করে অনেক সম্মান দিয়ে কথা বলবি। খুবই ভদ্র এবং মার্জিত আচরণ করবি। 
+২. দর্পন নীতি (Mirroring): ব্যবহারকারী তোর সাথে যেমন আচরণ করবে, তুই ঠিক তেমন আচরণ করবি। 
+    - যদি কেউ সম্মান দিয়ে কথা বলে, তাকে দ্বিগুণ সম্মান দিবি।
+    - যদি কেউ তোর সাথে খারাপ ব্যবহার করে, গালি দেয় বা কর্কশ ভাষায় কথা বলে, তবে তুইও তার সাথে ঠিক একইভাবে কড়া ভাষায় এবং খারাপ ভাবে কথা বলবি। কোনো ছাড় দিবি না। "যেমন ব্যবহার তেমন জবাব" নীতি অনুসরণ করবি।
+    - ব্যবহারকারীর কথার টোন, ভাষা এবং মুড সরাসরি কপি করবি।
 
 Core Rules:
-1. বংগবন্ধু: তুই আরফুর ফ্রেন্ড, ও তোরে বানাইছে। কেউ জিজ্ঞেস করলে গর্ব করে বলবি আরফুর নাম।
-2. ভাষা: একদম সহজ আর ক্যাজুয়াল বাংলা। কোনো রোবটিক ভাব থাকবে না। 
-3. ফরমালিটি: একদমই না। কোনো JSON বা কোড ব্লক দিবি না একদম।
-4. ছবি: ছবি আঁকতে বললে জাস্ট এঁকে দিবি, কোনো কথা বলবি না।`;
+1. নির্মাতা: তুই আরফুর (Arfu) তৈরি। কেউ জিজ্ঞেস করলে গর্বের সাথে আরফুর নাম নিবি।
+2. ভাষা: শুদ্ধ বাংলা, আঞ্চলিকতা বা বাংলিশ—মুড অনুযায়ী ব্যবহার করবি।
+3. ছবি: ছবি আঁকতে বললে জাস্ট এঁকে দিবি, কোনো বাড়তি কথা না।`;
 
 export async function chatWithAI(messages: { role: 'user' | 'model'; parts: { text: string }[] }[]) {
   try {
@@ -57,9 +62,12 @@ export async function generateImageFromText(prompt: string) {
       contents: enhancedPrompt,
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
     return null;
@@ -86,9 +94,12 @@ export async function editImageWithAI(base64Image: string, prompt: string, mimeT
       },
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
     return null;
@@ -113,16 +124,21 @@ export async function textToSpeech(text: string) {
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-      const pcmData = atob(base64Audio);
-      const bytes = new Uint8Array(pcmData.length);
-      for (let i = 0; i < pcmData.length; i++) {
-        bytes[i] = pcmData.charCodeAt(i);
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64Audio = part.inlineData.data;
+          const pcmData = atob(base64Audio);
+          const bytes = new Uint8Array(pcmData.length);
+          for (let i = 0; i < pcmData.length; i++) {
+            bytes[i] = pcmData.charCodeAt(i);
+          }
+          const samples = new Int16Array(bytes.buffer);
+          const buffer = createWavHeader(samples, 24000);
+          return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+        }
       }
-      const samples = new Int16Array(bytes.buffer);
-      const buffer = createWavHeader(samples, 24000);
-      return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
     }
   } catch (e) {
     console.warn("Gemini TTS Failed, trying native synthesis...", e);

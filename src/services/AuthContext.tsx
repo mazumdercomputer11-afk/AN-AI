@@ -44,7 +44,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.code === 'auth/network-request-failed') {
+        alert("ইন্টারনেট সংযোগ নেই অথবা ব্লকড। আপনার নেট কানেকশন চেক করুন।");
+      }
       console.error("Login failed", error);
     }
   };

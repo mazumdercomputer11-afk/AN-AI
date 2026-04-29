@@ -44,14 +44,20 @@ import { useAuth } from './services/AuthContext';
 import { historyService, ChatThread, ChatMessage } from './services/historyService';
 
 export default function App() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, login } = useAuth();
   const [connectionOk, setConnectionOk] = useState(true);
+  
+  const [anonDisabled, setAnonDisabled] = useState(false);
   
   useEffect(() => {
     if (!authLoading && !user) {
       signInAnonymously(auth).catch(err => {
         if (err.code === 'auth/admin-restricted-operation') {
           console.warn("Anonymous auth disabled.");
+          setAnonDisabled(true);
+        } else if (err.code === 'auth/network-request-failed') {
+          console.warn("Firebase network connection failed. Retrying implicitly...");
+          setConnectionOk(false);
         } else {
           console.error("Auto Login Failed:", err);
           setConnectionOk(false);
@@ -97,7 +103,7 @@ export default function App() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "আসসালামু আলাইকুম! আমি AN - AI। বলো তো, আজ তোমাকে কীভাবে সাহায্য করতে পারি?"
+      content: "আসসালামু আলাইকুম! আমি AN - AI। বলুন তো, আজ আপনাকে কীভাবে সাহায্য করতে পারি?"
     }
   ]);
   const [input, setInput] = useState('');
@@ -106,7 +112,7 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [autoVoice, setAutoVoice] = useState(true);
+  const [autoVoice, setAutoVoice] = useState(false);
   const [isTapping, setIsTapping] = useState(false);
   
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -375,10 +381,16 @@ export default function App() {
           setIsSpeaking(false);
           if (audioRef.current) audioRef.current.src = "";
         };
-        audioRef.current.onerror = (e) => {
-          console.error("Audio Load Error:", e);
+        audioRef.current.onerror = () => {
+          // Silent fallback to native synthesis if Gemini TTS fails to load
           setIsSpeaking(false);
           if (audioRef.current) audioRef.current.src = "";
+          // Attempt native fallback silently
+          if (text) {
+            const ut = new SpeechSynthesisUtterance(text);
+            ut.lang = 'bn-BD';
+            window.speechSynthesis.speak(ut);
+          }
         };
       } else {
         setIsSpeaking(false);
@@ -402,7 +414,7 @@ export default function App() {
 
   const startNewChat = () => {
     setActiveThreadId(null);
-    const welcomeMsg = "আসসালামু আলাইকুম! আমি AN - AI। বলো তো, আমি তোমাকে কীভাবে সাহায্য করতে পারি?";
+    const welcomeMsg = "আসসালামু আলাইকুম! আমি AN - AI। বলুন তো, আমি আপনাকে কীভাবে সাহায্য করতে পারি?";
     setMessages([
       {
         id: 'welcome',
@@ -660,6 +672,25 @@ export default function App() {
                   className="px-4 py-1.5 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
                 >
                   RETRY
+                </button>
+              </motion.div>
+            )}
+
+            {anonDisabled && !user && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-8 p-5 rounded-2xl bg-brand/10 border border-brand/20 text-brand backdrop-blur-xl flex flex-col md:flex-row items-center gap-4 text-center md:text-left"
+              >
+                <div className="flex-1">
+                  <h3 className="font-bold text-base mb-1">Anonymous Auth is Disabled</h3>
+                  <p className="text-sm text-neutral-300">হিস্ট্রি সেভ করতে এবং AI এর সাথে আড্ডা দিতে প্রপারলি লগইন করুন অথবা Firebase কনসোলে Anonymous Auth এনাবল করুন।</p>
+                </div>
+                <button 
+                  onClick={login}
+                  className="px-6 py-2.5 bg-brand text-black rounded-xl text-sm font-black hover:bg-white transition-all shadow-lg shadow-brand/20 active:scale-95 whitespace-nowrap"
+                >
+                  LOGIN WITH GOOGLE
                 </button>
               </motion.div>
             )}
