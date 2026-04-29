@@ -22,7 +22,11 @@ import {
   MessageSquare,
   History,
   Menu,
-  ChevronLeft
+  ChevronLeft,
+  Share2,
+  Copy,
+  Download,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -39,7 +43,13 @@ import { historyService, ChatThread, ChatMessage } from './services/historyServi
 export default function App() {
   const { user, login, logout, loading: authLoading } = useAuth();
   
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: "আমি আপনাকে কী ভাবে সাহায্য করতে পারি?"
+    }
+  ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [appState, setAppState] = useState<AppState>('chat');
@@ -81,12 +91,6 @@ export default function App() {
           isImageGeneration: m.isImageGeneration
         })));
       });
-    } else {
-      setMessages([{
-        id: 'welcome',
-        role: 'assistant',
-        content: `Hello ${user?.displayName || ''}! I am AN ai. I can chat, generate images, and edit your photos. Your history will be saved securely.`
-      }]);
     }
     return () => unsubscribe?.();
   }, [activeThreadId, user]);
@@ -203,7 +207,48 @@ export default function App() {
 
   const startNewChat = () => {
     setActiveThreadId(null);
-    setMessages([]);
+    setMessages([
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content: "আমি আপনাকে কী ভাবে সাহায্য করতে পারি?"
+      }
+    ]);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setSelectedImage(reader.result as string);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    // Simple feedback could be added here if needed
+  };
+
+  const shareContent = async (msg: Message) => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'AN ai Response',
+          text: msg.content,
+          url: msg.image || window.location.href,
+        });
+      }
+    } catch (err) {
+      console.log('Error sharing', err);
+    }
   };
 
   if (authLoading) {
@@ -214,30 +259,7 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-neutral-950 px-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md glass p-8 rounded-3xl text-center space-y-6"
-        >
-          <div className="w-20 h-20 bg-brand rounded-2xl flex items-center justify-center mx-auto shadow-2xl shadow-brand/20 mb-4">
-            <Sparkles className="text-white w-10 h-10" />
-          </div>
-          <h1 className="text-3xl font-display font-bold text-white tracking-tight">AN ai</h1>
-          <p className="text-neutral-400">Welcome back. Please sign in to access your chat history and premium image tools.</p>
-          <button 
-            onClick={login}
-            className="w-full py-4 bg-white text-black font-bold rounded-2xl flex items-center justify-center gap-3 hover:bg-neutral-200 transition-all active:scale-95"
-          >
-            <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-            Continue with Google
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
+  // Login gate removed as requested. Users can still login via sidebar if they want to sync.
 
   return (
     <div className="flex h-screen bg-neutral-950 text-neutral-100 overflow-hidden">
@@ -277,20 +299,32 @@ export default function App() {
               </div>
 
               <div className="pt-4 border-t border-neutral-900 mt-4 space-y-4">
-                <div className="flex items-center gap-3 px-2">
-                  <img src={user.photoURL || ''} className="w-10 h-10 rounded-full border-2 border-brand/20" alt="Me" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white truncate">{user.displayName}</p>
-                    <p className="text-[10px] text-neutral-500 truncate">{user.email}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={logout}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-neutral-400 hover:text-red-400 hover:bg-neutral-900 rounded-xl transition-all"
-                >
-                  <LogOut size={16} />
-                  <span className="text-sm font-medium">Log out</span>
-                </button>
+                {user ? (
+                  <>
+                    <div className="flex items-center gap-3 px-2">
+                      <img src={user.photoURL || ''} className="w-10 h-10 rounded-full border-2 border-brand/20" alt="Me" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{user.displayName}</p>
+                        <p className="text-[10px] text-neutral-500 truncate">{user.email}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={logout}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-neutral-400 hover:text-red-400 hover:bg-neutral-900 rounded-xl transition-all"
+                    >
+                      <LogOut size={16} />
+                      <span className="text-sm font-medium">Log out</span>
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    onClick={login}
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-white text-black rounded-xl font-bold hover:bg-neutral-200 transition-all active:scale-95"
+                  >
+                    <UserIcon size={16} />
+                    <span className="text-sm">Sign In / Logic</span>
+                  </button>
+                )}
               </div>
             </div>
           </motion.aside>
@@ -386,13 +420,34 @@ export default function App() {
                   )}>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
-                  {msg.role === 'assistant' && (
-                    <div className="mt-2 flex gap-2 justify-start opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => speakText(msg.content)} className="p-1 text-neutral-500 hover:text-brand">
-                        <Volume2 size={12} />
+                  <div className={cn(
+                    "mt-2 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity",
+                    msg.role === 'user' ? "justify-end" : "justify-start"
+                  )}>
+                    <button 
+                      onClick={() => copyToClipboard(msg.content)} 
+                      className="p-1.5 text-neutral-500 hover:text-brand bg-neutral-900/50 rounded-lg border border-neutral-800 transition-all hover:scale-110"
+                      title="Copy text"
+                    >
+                      <Copy size={14} />
+                    </button>
+                    {msg.role === 'assistant' && (
+                      <button 
+                        onClick={() => speakText(msg.content)} 
+                        className="p-1.5 text-neutral-500 hover:text-brand bg-neutral-900/50 rounded-lg border border-neutral-800 transition-all hover:scale-110"
+                        title="Speak"
+                      >
+                        <Volume2 size={14} />
                       </button>
-                    </div>
-                  )}
+                    )}
+                    <button 
+                      onClick={() => shareContent(msg)} 
+                      className="p-1.5 text-neutral-500 hover:text-brand bg-neutral-900/50 rounded-lg border border-neutral-800 transition-all hover:scale-110"
+                      title="Share"
+                    >
+                      <Share2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             ))}
@@ -448,12 +503,13 @@ export default function App() {
                 }} />
               </label>
 
-          <input 
+              <input 
                 autoFocus
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Ask anything, generate an image..."
+                onPaste={handlePaste}
+                placeholder="যেকোনো কিছু জিজ্ঞাসা করুন বা ছবি তৈরি করতে বলুন..."
                 className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder-neutral-500 py-4 text-sm font-sans"
               />
 
