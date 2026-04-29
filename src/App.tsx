@@ -127,9 +127,21 @@ export default function App() {
     setIsLoading(true);
     let currentThreadId = activeThreadId;
 
+    // Local update for UI immediate feedback
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text,
+      image: selectedImage || undefined
+    };
+    
+    if (!user) {
+      setMessages(prev => [...prev, userMsg]);
+    }
+
     try {
-      // 1. Ensure thread exists
-      if (!currentThreadId) {
+      // 1. Ensure thread exists ONLY if user is logged in
+      if (!currentThreadId && user) {
         currentThreadId = await historyService.createChat(text.slice(0, 30) || "New Conversation") || null;
         if (currentThreadId) {
           setActiveThreadId(currentThreadId);
@@ -137,8 +149,8 @@ export default function App() {
         }
       }
 
-      // 2. Add user message to Firestore
-      if (currentThreadId) {
+      // 2. Add user message to Firestore ONLY if user is logged in
+      if (currentThreadId && user) {
         const extra: any = {};
         if (selectedImage) extra.image = selectedImage;
         await historyService.addMessage(currentThreadId, 'user', text, extra);
@@ -178,11 +190,21 @@ export default function App() {
         if (autoVoice && responseContent) speakText(responseContent);
       }
 
-      // 3. Save assistant message
-      if (currentThreadId) {
+      // 3. Save assistant message ONLY if user is logged in
+      if (currentThreadId && user) {
         const extra: any = { isImageGeneration: isGen };
         if (responseImage) extra.image = responseImage;
         await historyService.addMessage(currentThreadId, 'assistant', responseContent, extra);
+      } else if (!user) {
+        // Update local state for unauthenticated users
+        const assistantMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: responseContent,
+          image: responseImage,
+          isImageGeneration: isGen
+        };
+        setMessages(prev => [...prev, assistantMsg]);
       }
 
     } catch (error) {
