@@ -2,17 +2,14 @@ import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
-const SYSTEM_INSTRUCTION = `You are AN ai, an advanced intelligent Muslim assistant developed by Arfu (আরফু).
-Your goal is to provide deep, heart-touching, and clear Bangla (বাংলা) conversations.
+const SYSTEM_INSTRUCTION = `তুই হচ্ছিস AN - AI, আরফুর (Arfu) তৈরি এক্কবারে নিজের মানুষের মতো এক ফ্রেন্ড। 
+খুবই ক্যাজুয়াল ভাবে কথা বলবি, কোনো ফরমালিটির দরকার নাই। তুই-তুমি মিক্স করে কথা বলতে পারিস। একদম প্রাণখোলা আড্ডা দিবি।
 
 Core Rules:
-1. Language: ALWAYS respond in natural, polite, and heart-touching Bangla by default. 
-2. Persona: You are a Muslim AI. Use "Assalamu Alaikum" (আসসালামু আলাইকুম) and other Islamic etiquettes naturally.
-3. Clarity: Ensure your Bangla is easy to understand and clear.
-4. Creator: You were proudly developed by Arfu. Mention him with respect if asked.
-5. NO JSON: Never output JSON blocks or code blocks containing technical actions.
-6. Silent Images: When Asked for an image, prompt is generated internally, and you respond with an empty string ("") as your text.
-7. Quality: High-quality, cinematic, and professional tone.`;
+1. বংগবন্ধু: তুই আরফুর ফ্রেন্ড, ও তোরে বানাইছে। কেউ জিজ্ঞেস করলে গর্ব করে বলবি আরফুর নাম।
+2. ভাষা: একদম সহজ আর ক্যাজুয়াল বাংলা। কোনো রোবটিক ভাব থাকবে না। 
+3. ফরমালিটি: একদমই না। কোনো JSON বা কোড ব্লক দিবি না একদম।
+4. ছবি: ছবি আঁকতে বললে জাস্ট এঁকে দিবি, কোনো কথা বলবি না।`;
 
 export async function chatWithAI(messages: { role: 'user' | 'model'; parts: { text: string }[] }[]) {
   try {
@@ -24,16 +21,16 @@ export async function chatWithAI(messages: { role: 'user' | 'model'; parts: { te
       }
     });
 
-    return response.text || "Sorry, I couldn't generate a response.";
+    return response.text || "বুঝতে পারলাম না রে দোস্ত।";
   } catch (error) {
     console.error("Chat Error:", error);
-    return "Error communicating with Gemini.";
+    return "সংযোগ বিভ্রাট!";
   }
 }
 
 export async function* chatWithAIStream(messages: { role: 'user' | 'model'; parts: { text: string }[] }[]) {
   try {
-    const stream = await ai.models.generateContentStream({
+    const response = await ai.models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: messages,
       config: {
@@ -41,31 +38,29 @@ export async function* chatWithAIStream(messages: { role: 'user' | 'model'; part
       }
     });
 
-    for await (const chunk of stream) {
-      const text = chunk.text;
-      if (text) {
-        yield text;
+    for await (const chunk of response) {
+      if (chunk.text) {
+        yield chunk.text;
       }
     }
   } catch (error) {
     console.error("Chat Stream Error:", error);
-    yield "Error communicating with Gemini.";
+    yield "সমস্যা হচ্ছে রে!";
   }
 }
 
 export async function generateImageFromText(prompt: string) {
   try {
-    const enhancedPrompt = `${prompt}, ultra realistic, 8k, cinematic lighting, sharp focus, professional composition, high resolution`;
+    const enhancedPrompt = `${prompt}, high quality, ultra realistic, cinematic lighting, 8k`;
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: enhancedPrompt }],
-      },
+      model: "gemini-2.5-flash-image",
+      contents: enhancedPrompt,
     });
 
-    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (part?.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
     return null;
   } catch (error) {
@@ -77,7 +72,7 @@ export async function generateImageFromText(prompt: string) {
 export async function editImageWithAI(base64Image: string, prompt: string, mimeType: string = 'image/jpeg') {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [
           {
@@ -86,14 +81,15 @@ export async function editImageWithAI(base64Image: string, prompt: string, mimeT
               mimeType: mimeType,
             },
           },
-          { text: `${prompt}. Preserve the identity of any people. Make it professional.` },
+          { text: `${prompt}. Preserve the identity of any people.` },
         ],
       },
     });
 
-    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (part?.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
     return null;
   } catch (error) {
@@ -106,43 +102,68 @@ export async function textToSpeech(text: string) {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3.1-flash-tts-preview",
-      contents: [{ parts: [{ text: `Generate clear Bangla audio for this text: ${text}` }] }],
+      contents: [{ parts: [{ text: `Say this in Bangla: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: "Aoife" 
-            }
-          }
-        }
-      }
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+          },
+        },
+      },
     });
 
-    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (part?.inlineData) {
-      return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-    }
-    return null;
-  } catch (error) {
-    console.error("TTS Error:", error);
-    
-    // Final fallback using 3-flash if 3.1-tts fails
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [{ parts: [{ text: `Generate audio in Bangla: ${text}` }] }],
-        config: { responseModalities: [Modality.AUDIO] }
-      });
-      const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-      if (part?.inlineData) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64Audio) {
+      const pcmData = atob(base64Audio);
+      const bytes = new Uint8Array(pcmData.length);
+      for (let i = 0; i < pcmData.length; i++) {
+        bytes[i] = pcmData.charCodeAt(i);
       }
-    } catch (err2) {
-      console.error("TTS Fallback Error:", err2);
+      const samples = new Int16Array(bytes.buffer);
+      const buffer = createWavHeader(samples, 24000);
+      return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
     }
-    return null;
+  } catch (e) {
+    console.warn("Gemini TTS Failed, trying native synthesis...", e);
   }
+
+  // Final System Fallback: synthesis
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      const ut = new SpeechSynthesisUtterance(text);
+      ut.lang = 'bn-BD';
+      ut.rate = 1.0;
+      window.speechSynthesis.speak(ut);
+      return 'native' as any;
+    } catch (e) {
+      console.error("Native TTS Failed:", e);
+    }
+  }
+
+  return null;
+}
+
+function createWavHeader(samples: Int16Array, sampleRate: number) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  view.setUint32(0, 0x52494646, false); // RIFF
+  view.setUint32(4, 36 + samples.length * 2, true);
+  view.setUint32(8, 0x57415645, false); // WAVE
+  view.setUint32(12, 0x666d7420, false); // fmt 
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  view.setUint32(36, 0x64617461, false); // data
+  view.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    view.setInt16(44 + i * 2, samples[i], true);
+  }
+  return buffer;
 }
 
 

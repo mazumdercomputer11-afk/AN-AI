@@ -50,6 +50,10 @@
     "chats/{chatId}/messages/{messageId}": {
       "schema": "Message",
       "description": "Messages within a conversation"
+    },
+    "test/connection": {
+      "schema": { "type": "object", "properties": {} },
+      "description": "Used for connection testing"
     }
   }
 }

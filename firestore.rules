@@ -28,6 +28,11 @@ service cloud.firestore {
       return resource.data;
     }
 
+    // --- Test Connection ---
+    match /test/connection {
+      allow read: if true;
+    }
+
     // --- User Profiles ---
     match /users/{userId} {
       allow get: if isOwner(userId);

@@ -1,5 +1,5 @@
 {
-  "name": "AN ai",
+  "name": "AN - AI",
   "description": "An advanced AI assistant specialized in intelligent conversation, image generation, image editing, and voice interaction in multiple languages including Bangla, English, and Banglish.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["image-generation", "image-editing", "voice-interaction"]

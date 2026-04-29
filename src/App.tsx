@@ -39,25 +39,37 @@ import {
   textToSpeech 
 } from './services/geminiService';
 import { signInAnonymously } from 'firebase/auth';
-import { auth } from './services/firebase';
+import { auth, checkConnection } from './services/firebase';
 import { useAuth } from './services/AuthContext';
 import { historyService, ChatThread, ChatMessage } from './services/historyService';
 
 export default function App() {
   const { user, loading: authLoading } = useAuth();
+  const [connectionOk, setConnectionOk] = useState(true);
   
   useEffect(() => {
     if (!authLoading && !user) {
       signInAnonymously(auth).catch(err => {
-        // If anonymous login fails, it's likely disabled in Firebase Console
         if (err.code === 'auth/admin-restricted-operation') {
-          console.warn("Anonymous auth disabled. Please enable it in Firebase Console -> Auth -> Sign-in method.");
+          console.warn("Anonymous auth disabled.");
         } else {
           console.error("Auto Login Failed:", err);
+          setConnectionOk(false);
         }
       });
     }
   }, [user, authLoading]);
+
+  // Periodic connection check
+  useEffect(() => {
+    const check = async () => {
+      const ok = await checkConnection();
+      setConnectionOk(ok);
+    };
+    const interval = setInterval(check, 60000); // Check every 60s
+    check();
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -85,7 +97,7 @@ export default function App() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "আসসালামু আলাইকুম! আমি আপনাকে কীভাবে সাহায্য করতে পারি?"
+      content: "আসসালামু আলাইকুম! আমি AN - AI। বলো তো, আজ তোমাকে কীভাবে সাহায্য করতে পারি?"
     }
   ]);
   const [input, setInput] = useState('');
@@ -321,11 +333,34 @@ export default function App() {
 
   const speakText = async (text: string) => {
     if (!text) return;
+    
+    // Stop any existing speech
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
     setIsSpeaking(true);
     try {
-      const audioUrl = await textToSpeech(text);
-      if (audioUrl && audioRef.current) {
-        audioRef.current.src = audioUrl;
+      const result = await textToSpeech(text);
+      
+      if (result === 'native') {
+        // Native speech synthesis handles its own state
+        // We'll just assume it's speaking for a bit or poll for end
+        const checkSpeech = setInterval(() => {
+          if (!window.speechSynthesis.speaking) {
+            setIsSpeaking(false);
+            clearInterval(checkSpeech);
+          }
+        }, 500);
+        return;
+      }
+
+      if (result && audioRef.current) {
+        audioRef.current.src = result;
         audioRef.current.load();
         
         const playPromise = audioRef.current.play();
@@ -336,10 +371,14 @@ export default function App() {
           });
         }
 
-        audioRef.current.onended = () => setIsSpeaking(false);
+        audioRef.current.onended = () => {
+          setIsSpeaking(false);
+          if (audioRef.current) audioRef.current.src = "";
+        };
         audioRef.current.onerror = (e) => {
           console.error("Audio Load Error:", e);
           setIsSpeaking(false);
+          if (audioRef.current) audioRef.current.src = "";
         };
       } else {
         setIsSpeaking(false);
@@ -350,9 +389,20 @@ export default function App() {
     }
   };
 
+  const stopSpeaking = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  };
+
   const startNewChat = () => {
     setActiveThreadId(null);
-    const welcomeMsg = "আসসালামু আলাইকুম! আমি আরফুর তৈরি 'এএন এআই' (AN ai)। আমি আপনাকে কীভাবে সাহায্য করতে পারি?";
+    const welcomeMsg = "আসসালামু আলাইকুম! আমি AN - AI। বলো তো, আমি তোমাকে কীভাবে সাহায্য করতে পারি?";
     setMessages([
       {
         id: 'welcome',
@@ -528,7 +578,7 @@ export default function App() {
               <div className="pt-4 border-t border-white/5 mt-auto">
                 <div className="pt-2 text-center group cursor-help">
                   <p className="text-[9px] text-neutral-600 font-bold uppercase tracking-widest transition-colors group-hover:text-neutral-400">
-                    Propelled by <span className="text-brand group-hover:animate-pulse">Arfu</span>
+                    Powered by <a href="https://www.instagram.com/_arfan_arfu19/" target="_blank" rel="noopener noreferrer" className="text-brand group-hover:animate-pulse hover:underline">Arfu</a>
                   </p>
                 </div>
               </div>
@@ -558,13 +608,19 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => setAutoVoice(!autoVoice)}
+              onClick={() => {
+                if (isSpeaking) {
+                  stopSpeaking();
+                } else {
+                  setAutoVoice(!autoVoice);
+                }
+              }}
               className={cn(
                 "p-2 rounded-lg transition-all",
-                autoVoice ? "bg-brand/10 text-brand" : "text-neutral-500 hover:text-white"
+                (autoVoice || isSpeaking) ? "bg-brand/10 text-brand" : "text-neutral-500 hover:text-white"
               )}
             >
-              {autoVoice ? <Volume2 size={20} /> : <VolumeX size={20} />}
+              {(autoVoice || isSpeaking) ? <Volume2 size={20} className={isSpeaking ? "animate-pulse" : ""} /> : <VolumeX size={20} />}
             </button>
             {activeThreadId && (
               <button 
@@ -586,6 +642,27 @@ export default function App() {
           className="flex-1 overflow-y-auto px-4 md:px-6 pt-24 pb-32 space-y-8 scrollbar-hide scroll-smooth"
         >
           <div className="max-w-4xl mx-auto w-full">
+            {!connectionOk && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mb-8 p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-between backdrop-blur-xl"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-sm font-medium">Internet error! Connecting...</span>
+                </div>
+                <button 
+                  onClick={async () => {
+                    const ok = await checkConnection();
+                    setConnectionOk(ok);
+                  }}
+                  className="px-4 py-1.5 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  RETRY
+                </button>
+              </motion.div>
+            )}
             <AnimatePresence mode="popLayout" initial={false}>
               {messages.map((msg, i) => (
                 <motion.div
@@ -688,15 +765,15 @@ export default function App() {
         </div>
 
         {/* Floating Input Area */}
-        <div className="absolute bottom-0 left-0 w-full p-6 pb-8 bg-gradient-to-t from-neutral-950 via-neutral-950 to-transparent">
-          <div className="max-w-3xl mx-auto relative">
+        <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 pb-6 md:pb-8 bg-gradient-to-t from-neutral-950 via-neutral-950 to-transparent">
+          <div className="max-w-3xl mx-auto relative w-full px-4">
             <AnimatePresence>
               {selectedImage && (
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 20 }}
-                  className="absolute bottom-full mb-4 left-0 glass p-2 rounded-2xl flex items-center gap-3 border-brand/30 ring-1 ring-brand/20 shadow-2xl shadow-brand/10"
+                  className="absolute bottom-full mb-4 left-0 glass p-2 rounded-2xl flex items-center gap-3 border-brand/30 ring-1 ring-brand/20 shadow-2xl shadow-brand/10 mx-2"
                 >
                   <div className="relative w-20 h-20 rounded-lg overflow-hidden">
                     <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
@@ -715,8 +792,8 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            <div className="glass p-2 pl-4 flex items-center gap-2 rounded-[28px] shadow-2xl border-white/10 ring-1 ring-white/5 bg-neutral-900/40 backdrop-blur-3xl transition-all focus-within:ring-brand/30 focus-within:border-brand/30">
-              <label className="p-3 text-neutral-400 hover:text-brand cursor-pointer transition-all shrink-0 hover:scale-110 active:scale-90">
+            <div className="glass p-1.5 md:p-2 pl-3 md:pl-4 flex items-center gap-1 md:gap-2 rounded-[28px] shadow-2xl border-white/10 ring-1 ring-white/5 bg-neutral-900/40 backdrop-blur-3xl transition-all focus-within:ring-brand/30 focus-within:border-brand/30">
+              <label className="p-2 md:p-3 text-neutral-400 hover:text-brand cursor-pointer transition-all shrink-0 hover:scale-110 active:scale-90">
                 <Camera size={22} />
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -735,25 +812,25 @@ export default function App() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 onPaste={handlePaste}
                 placeholder="ম্যাজিক এর মতো কিছু তৈরি করুন..."
-                className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder-neutral-500 py-4 text-sm font-sans"
+                className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-white placeholder-neutral-500 py-4 text-sm font-sans"
               />
 
-              <div className="flex items-center gap-2 pr-1">
+              <div className="flex items-center gap-1 md:gap-2 pr-1.5 md:pr-2">
                 <button 
                   onClick={toggleListening}
                   className={cn(
-                    "p-3 rounded-2xl transition-all shadow-lg active:scale-90",
+                    "p-2.5 md:p-3 rounded-2xl transition-all shadow-lg active:scale-90 shrink-0",
                     isListening ? "bg-red-500 text-white animate-pulse shadow-red-500/20" : "bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10"
                   )}
                 >
-                  {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+                  {isListening ? <MicOff size={18} /> : <Mic size={18} />}
                 </button>
                 <button 
                   onClick={() => handleSend()}
                   disabled={isLoading || (!input.trim() && !selectedImage)}
-                  className="p-3 bg-brand text-white rounded-2xl shadow-lg shadow-brand/20 hover:scale-110 active:scale-90 disabled:opacity-30 transition-all shrink-0 hover:bg-brand/90"
+                  className="p-2.5 md:p-3 bg-brand text-white rounded-2xl shadow-lg shadow-brand/20 hover:scale-110 active:scale-90 disabled:opacity-30 transition-all shrink-0 hover:bg-brand/90"
                 >
-                  {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+                  {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                 </button>
               </div>
             </div>
