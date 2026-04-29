@@ -1,0 +1,91 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) 
+        && incoming().email == request.auth.token.email
+        && incoming().createdAt == request.time
+        && incoming().keys().hasAll(['email', 'createdAt'])
+        && incoming().keys().size() <= 6;
+      allow update: if isOwner(userId)
+        && incoming().email == existing().email // Immutable email
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']);
+    }
+
+    // --- Chats ---
+    match /chats/{chatId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isOwner(resource.data.userId);
+      
+      function isValidChat(data) {
+        return data.userId == request.auth.uid
+          && data.title is string && data.title.size() <= 200
+          && data.createdAt == request.time;
+      }
+
+      allow create: if isSignedIn() 
+        && isValidId(chatId)
+        && isValidChat(incoming())
+        && incoming().keys().hasAll(['userId', 'title', 'createdAt'])
+        && incoming().keys().size() <= 5;
+
+      allow update: if isOwner(existing().userId)
+        && incoming().userId == existing().userId
+        && incoming().diff(existing()).affectedKeys().hasAny(['title', 'lastMessageAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastMessageAt']);
+
+      allow delete: if isOwner(existing().userId);
+
+      match /messages/{messageId} {
+        // Master Gate: Check parent chat ownership
+        function chatOwner() {
+          return get(/databases/$(database)/documents/chats/$(chatId)).data.userId;
+        }
+
+        allow list, get: if isOwner(chatOwner());
+
+        function isValidMessage(data) {
+          return data.role in ['user', 'assistant']
+            && data.content is string && data.content.size() <= 20000
+            && data.createdAt == request.time
+            && (!('image' in data) || (data.image is string && data.image.size() <= 1000000))
+            && (!('isImageGeneration' in data) || data.isImageGeneration is bool);
+        }
+
+        allow create: if isOwner(chatOwner())
+          && isValidMessage(incoming())
+          && incoming().keys().hasAll(['role', 'content', 'createdAt'])
+          && incoming().keys().size() <= 6;
+      }
+    }
+  }
+}
