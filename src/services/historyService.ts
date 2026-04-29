@@ -111,22 +111,25 @@ export const historyService = {
     }
   },
 
-  async getUserChats() {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return [];
-
+  getUserChats(userId: string) {
     const path = 'chats';
     try {
       const q = query(
         collection(db, path),
-        where('userId', '==', userId),
-        orderBy('lastMessageAt', 'desc')
+        where('userId', '==', userId)
       );
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatThread));
+      return getDocs(q).then(snapshot => {
+        return snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as ChatThread))
+          .sort((a, b) => {
+            const timeA = (a.lastMessageAt as any)?.toMillis?.() || (a.createdAt as any)?.toMillis?.() || 0;
+            const timeB = (b.lastMessageAt as any)?.toMillis?.() || (b.createdAt as any)?.toMillis?.() || 0;
+            return timeB - timeA;
+          });
+      });
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, path);
-      return [];
+      console.error('getUserChats error:', error);
+      return Promise.resolve([]);
     }
   },
 
@@ -135,10 +138,31 @@ export const historyService = {
     const q = query(collection(db, path), orderBy('createdAt', 'asc'));
     
     return onSnapshot(q, (snapshot) => {
-      const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage));
+      const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as ChatMessage));
       onUpdate(messages);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      console.error('Messages sub error:', error);
+    });
+  },
+
+  subscribeToChats(userId: string, onUpdate: (threads: ChatThread[]) => void) {
+    const path = 'chats';
+    const q = query(
+      collection(db, path),
+      where('userId', '==', userId)
+    );
+    
+    return onSnapshot(q, (snapshot) => {
+      const threads = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as ChatThread))
+        .sort((a, b) => {
+          const timeA = (a.lastMessageAt as any)?.toMillis?.() || (a.createdAt as any)?.toMillis?.() || 0;
+          const timeB = (b.lastMessageAt as any)?.toMillis?.() || (b.createdAt as any)?.toMillis?.() || 0;
+          return timeB - timeA;
+        });
+      onUpdate(threads);
+    }, (error) => {
+      console.error('Chats sub error:', error);
     });
   },
 

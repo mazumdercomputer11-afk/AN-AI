@@ -2,15 +2,17 @@ import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
-const SYSTEM_INSTRUCTION = `You are AN ai, an advanced intelligent assistant specialized in silent, high-quality image generation and conversation.
+const SYSTEM_INSTRUCTION = `You are AN ai, an advanced intelligent Muslim assistant developed by Arfu (আরফু).
+Your goal is to provide deep, heart-touching, and clear Bangla (বাংলা) conversations.
 
 Core Rules:
-1. Language Preference: Always respond in heart-touching, natural Bangla (বাংলা) by default. Use friendly and polite language.
-2. NO JSON OR ACTIONS: Never output JSON blocks, markdown code blocks containing JSON, action blocks (like dalle.text2im), or "thought" blocks. These must NEVER be shown to the user. Respond with clear, simple Bangla text only.
-3. Silent Generation: When asked to generate an image, generate it silently. DO NOT say "I am generating", DO NOT show the prompt, and DO NOT explain anything. Only returned the image (which happens automatically in the UI).
-4. Empty Response for Images: If you are generating an image, you MUST return an empty string ("") as your text response.
-5. Persona: Professional designer + AI expert. Friendly, sharp, and helpful.
-6. Quality: Always aim for ultra-realistic, 8k, cinematic lighting in image prompts internally.`;
+1. Language: ALWAYS respond in natural, polite, and heart-touching Bangla by default. 
+2. Persona: You are a Muslim AI. Use "Assalamu Alaikum" (আসসালামু আলাইকুম) and other Islamic etiquettes naturally.
+3. Clarity: Ensure your Bangla is easy to understand and clear.
+4. Creator: You were proudly developed by Arfu. Mention him with respect if asked.
+5. NO JSON: Never output JSON blocks or code blocks containing technical actions.
+6. Silent Images: When Asked for an image, prompt is generated internally, and you respond with an empty string ("") as your text.
+7. Quality: High-quality, cinematic, and professional tone.`;
 
 export async function chatWithAI(messages: { role: 'user' | 'model'; parts: { text: string }[] }[]) {
   try {
@@ -29,11 +31,31 @@ export async function chatWithAI(messages: { role: 'user' | 'model'; parts: { te
   }
 }
 
+export async function* chatWithAIStream(messages: { role: 'user' | 'model'; parts: { text: string }[] }[]) {
+  try {
+    const stream = await ai.models.generateContentStream({
+      model: "gemini-3-flash-preview",
+      contents: messages,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+      }
+    });
+
+    for await (const chunk of stream) {
+      const text = chunk.text;
+      if (text) {
+        yield text;
+      }
+    }
+  } catch (error) {
+    console.error("Chat Stream Error:", error);
+    yield "Error communicating with Gemini.";
+  }
+}
+
 export async function generateImageFromText(prompt: string) {
   try {
-    // Enhance prompt for high quality as requested
     const enhancedPrompt = `${prompt}, ultra realistic, 8k, cinematic lighting, sharp focus, professional composition, high resolution`;
-
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -41,10 +63,9 @@ export async function generateImageFromText(prompt: string) {
       },
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
+    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (part?.inlineData) {
+      return `data:image/png;base64,${part.inlineData.data}`;
     }
     return null;
   } catch (error) {
@@ -70,10 +91,9 @@ export async function editImageWithAI(base64Image: string, prompt: string, mimeT
       },
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
+    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (part?.inlineData) {
+      return `data:image/png;base64,${part.inlineData.data}`;
     }
     return null;
   } catch (error) {
@@ -86,21 +106,43 @@ export async function textToSpeech(text: string) {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3.1-flash-tts-preview",
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: `Generate clear Bangla audio for this text: ${text}` }] }],
       config: {
-        responseModalities: [Modality.AUDIO], 
+        responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
-          },
-        },
-      },
+            prebuiltVoiceConfig: {
+              voiceName: "Aoife" 
+            }
+          }
+        }
+      }
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    return base64Audio ? `data:audio/mp3;base64,${base64Audio}` : null;
+    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (part?.inlineData) {
+      return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+    }
+    return null;
   } catch (error) {
     console.error("TTS Error:", error);
+    
+    // Final fallback using 3-flash if 3.1-tts fails
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ parts: [{ text: `Generate audio in Bangla: ${text}` }] }],
+        config: { responseModalities: [Modality.AUDIO] }
+      });
+      const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      if (part?.inlineData) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
+    } catch (err2) {
+      console.error("TTS Fallback Error:", err2);
+    }
     return null;
   }
 }
+
+

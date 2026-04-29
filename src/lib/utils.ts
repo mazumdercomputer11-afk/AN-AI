@@ -11,6 +11,7 @@ export interface Message {
   content: string;
   image?: string; // base64 or URL
   isImageGeneration?: boolean;
+  isStreaming?: boolean;
 }
 
 export type AppState = 'chat' | 'generating' | 'editing' | 'speaking';
