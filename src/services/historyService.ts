@@ -57,6 +57,7 @@ export interface ChatThread {
   userId: string;
   lastMessageAt: any;
   createdAt: any;
+  isPinned?: boolean;
 }
 
 export interface ChatMessage {
@@ -156,6 +157,10 @@ export const historyService = {
       const threads = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data({ serverTimestamps: 'estimate' }) } as ChatThread))
         .sort((a, b) => {
+          // Pin sort first
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          
           const timeA = (a.lastMessageAt as any)?.toMillis?.() || (a.createdAt as any)?.toMillis?.() || 0;
           const timeB = (b.lastMessageAt as any)?.toMillis?.() || (b.createdAt as any)?.toMillis?.() || 0;
           return timeB - timeA;
@@ -164,6 +169,17 @@ export const historyService = {
     }, (error) => {
       console.error('Chats sub error:', error);
     });
+  },
+
+  async togglePinChat(chatId: string, currentPinStatus: boolean) {
+    const path = `chats/${chatId}`;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), {
+        isPinned: !currentPinStatus
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
   },
 
   async deleteChat(chatId: string) {

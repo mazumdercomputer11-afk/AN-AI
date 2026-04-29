@@ -65,8 +65,8 @@ service cloud.firestore {
 
       allow update: if isOwner(existing().userId)
         && incoming().userId == existing().userId
-        && incoming().diff(existing()).affectedKeys().hasAny(['title', 'lastMessageAt'])
-        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastMessageAt']);
+        && incoming().diff(existing()).affectedKeys().hasAny(['title', 'lastMessageAt', 'isPinned'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastMessageAt', 'isPinned']);
 
       allow delete: if isOwner(existing().userId);
 

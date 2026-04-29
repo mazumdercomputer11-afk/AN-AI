@@ -47,6 +47,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error: any) {
       if (error.code === 'auth/network-request-failed') {
         alert("ইন্টারনেট সংযোগ নেই অথবা ব্লকড। আপনার নেট কানেকশন চেক করুন।");
+      } else if (error.code === 'auth/unauthorized-domain') {
+        alert("Domain Not Authorized: এই লিঙ্কটি (Domain) Firebase কনসোলে Authorized Domains লিস্টে যোগ করা নেই। দয়া করে Firebase Console এ গিয়ে এই লিঙ্কটি 'Authentication > Settings > Authorized domains' এ অ্যাড করুন।");
+      } else {
+        alert(`লগইন ব্যর্থ হয়েছে: ${error.message}`);
       }
       console.error("Login failed", error);
     }

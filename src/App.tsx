@@ -6,17 +6,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, 
-  Mic, 
-  MicOff, 
   Image as ImageIcon, 
   Sparkles, 
   Trash2, 
   Loader2, 
-  Volume2, 
-  VolumeX, 
   Camera,
   X,
   Plus,
+  Pin,
   LogOut,
   User as UserIcon,
   MessageSquare,
@@ -35,8 +32,7 @@ import {
   chatWithAI, 
   chatWithAIStream,
   generateImageFromText, 
-  editImageWithAI, 
-  textToSpeech 
+  editImageWithAI 
 } from './services/geminiService';
 import { signInAnonymously } from 'firebase/auth';
 import { auth, checkConnection } from './services/firebase';
@@ -44,7 +40,7 @@ import { useAuth } from './services/AuthContext';
 import { historyService, ChatThread, ChatMessage } from './services/historyService';
 
 export default function App() {
-  const { user, loading: authLoading, login } = useAuth();
+  const { user, loading: authLoading, login, logout } = useAuth();
   const [connectionOk, setConnectionOk] = useState(true);
   
   const [anonDisabled, setAnonDisabled] = useState(false);
@@ -77,28 +73,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.interimResults = false;
-        recognitionRef.current.lang = 'bn-BD';
-        
-        recognitionRef.current.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setInput(transcript);
-          setIsListening(false);
-          handleSend(transcript);
-        };
-        
-        recognitionRef.current.onend = () => setIsListening(false);
-        recognitionRef.current.onerror = () => setIsListening(false);
-      }
-    }
-  }, []);
-  
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -109,42 +83,13 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [appState, setAppState] = useState<AppState>('chat');
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [autoVoice, setAutoVoice] = useState(false);
-  const [isTapping, setIsTapping] = useState(false);
   
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Mouse & Touch Glow Effect
-  useEffect(() => {
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      const x = 'clientX' in e ? e.clientX : e.touches[0].clientX;
-      const y = 'clientY' in e ? e.clientY : e.touches[0].clientY;
-      setMousePos({ x, y });
-    };
-    const handleDown = () => setIsTapping(true);
-    const handleUp = () => setIsTapping(false);
-
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('touchstart', handleMove);
-    window.addEventListener('mousedown', handleDown);
-    window.addEventListener('mouseup', handleUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('touchstart', handleMove);
-      window.removeEventListener('mousedown', handleDown);
-      window.removeEventListener('mouseup', handleUp);
-    };
-  }, []);
 
   // Load threads
   useEffect(() => {
@@ -156,27 +101,6 @@ export default function App() {
     }
     return () => unsub?.();
   }, [user]);
-
-  // Speech Recognition Setup
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.lang = 'bn-BD';
-        
-        recognitionRef.current.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setInput(transcript);
-          handleSend(transcript);
-          setIsListening(false);
-        };
-        recognitionRef.current.onend = () => setIsListening(false);
-        recognitionRef.current.onerror = () => setIsListening(false);
-      }
-    }
-  }, []);
 
   // Sync messages with active thread
   useEffect(() => {
@@ -201,15 +125,6 @@ export default function App() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
-
-  const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-    } else {
-      setIsListening(true);
-      recognitionRef.current?.start();
-    }
-  };
 
   const handleSend = async (overrideInput?: string) => {
     const text = overrideInput || input;
@@ -301,8 +216,6 @@ export default function App() {
           }
           responseContent = fullContent;
           setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, isStreaming: false } : m));
-          
-          if (autoVoice && responseContent) speakText(responseContent);
         } catch (err) {
           console.error("Stream Error:", err);
           responseContent = "দুঃখিত, সংযোগে সমস্যা হয়েছে। আবার চেষ্টা করুন।";
@@ -337,81 +250,6 @@ export default function App() {
     }
   };
 
-  const speakText = async (text: string) => {
-    if (!text) return;
-    
-    // Stop any existing speech
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-
-    setIsSpeaking(true);
-    try {
-      const result = await textToSpeech(text);
-      
-      if (result === 'native') {
-        // Native speech synthesis handles its own state
-        // We'll just assume it's speaking for a bit or poll for end
-        const checkSpeech = setInterval(() => {
-          if (!window.speechSynthesis.speaking) {
-            setIsSpeaking(false);
-            clearInterval(checkSpeech);
-          }
-        }, 500);
-        return;
-      }
-
-      if (result && audioRef.current) {
-        audioRef.current.src = result;
-        audioRef.current.load();
-        
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(error => {
-            console.error("Audio playback interrupted/failed:", error);
-            setIsSpeaking(false);
-          });
-        }
-
-        audioRef.current.onended = () => {
-          setIsSpeaking(false);
-          if (audioRef.current) audioRef.current.src = "";
-        };
-        audioRef.current.onerror = () => {
-          // Silent fallback to native synthesis if Gemini TTS fails to load
-          setIsSpeaking(false);
-          if (audioRef.current) audioRef.current.src = "";
-          // Attempt native fallback silently
-          if (text) {
-            const ut = new SpeechSynthesisUtterance(text);
-            ut.lang = 'bn-BD';
-            window.speechSynthesis.speak(ut);
-          }
-        };
-      } else {
-        setIsSpeaking(false);
-      }
-    } catch (err) {
-      console.error("Speech failure:", err);
-      setIsSpeaking(false);
-    }
-  };
-
-  const stopSpeaking = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-  };
-
   const startNewChat = () => {
     setActiveThreadId(null);
     const welcomeMsg = "আসসালামু আলাইকুম! আমি AN - AI। বলুন তো, আমি আপনাকে কীভাবে সাহায্য করতে পারি?";
@@ -422,8 +260,32 @@ export default function App() {
         content: welcomeMsg
       }
     ]);
-    if (autoVoice) speakText(welcomeMsg);
     if (window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
+  const handleTogglePin = async (e: React.MouseEvent, threadId: string, currentPin: boolean) => {
+    e.stopPropagation();
+    await historyService.togglePinChat(threadId, currentPin);
+  };
+
+  const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (window.confirm("আপনি কি নিশ্চিতভাবে এই চ্যাটটি ডিলিট করতে চান? এটি আর ফিরিয়ে আনা যাবে না।")) {
+      try {
+        await historyService.deleteChat(threadId);
+        if (activeThreadId === threadId) {
+          startNewChat();
+        }
+        alert("চ্যাটটি সফলভাবে ডিলিট করা হয়েছে।");
+      } catch (error: any) {
+        console.error("Delete failure details:", error);
+        alert("দুঃখিত, চ্যাট ডিলিট করতে গিয়ে টেকনিক্যাল সমস্যা হয়েছে। দয়া করে আবার ট্রাই করুন।");
+      }
+    }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -472,59 +334,10 @@ export default function App() {
   // Login gate removed as requested. Users can still login via sidebar if they want to sync.
 
   return (
-    <div className="flex h-screen bg-neutral-950 text-neutral-100 overflow-hidden relative selection:bg-brand/30 cursor-none md:cursor-auto">
-      {/* Magic Background Effects */}
+    <div className="flex h-screen bg-neutral-950 text-neutral-100 overflow-hidden relative selection:bg-brand/30 selection:text-white">
+      {/* Subtle Background Pulses */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <motion.div 
-          animate={{ x: mousePos.x - 200, y: mousePos.y - 200 }}
-          transition={{ type: "spring", damping: 30, stiffness: 50, mass: 0.5 }}
-          className="absolute w-[400px] h-[400px] bg-brand/10 blur-[120px] rounded-full"
-        />
-        
-        {/* Custom Cursor / Tap Effect */}
-        <motion.div
-          animate={{ 
-            x: mousePos.x - 10, 
-            y: mousePos.y - 10,
-            scale: isTapping ? 0.8 : 1,
-          }}
-          className="fixed w-5 h-5 border border-brand/40 rounded-full z-[100] hidden md:block pointer-events-none shadow-[0_0_15px_rgba(30,215,96,0.4)] bg-brand/5 backdrop-blur-[1px]"
-        />
-        <AnimatePresence>
-          {isTapping && (
-            <>
-              <motion.div
-                initial={{ x: mousePos.x - 10, y: mousePos.y - 10, scale: 1, opacity: 0.8 }}
-                animate={{ scale: 5, opacity: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-                className="fixed w-5 h-5 bg-brand/40 rounded-full z-[100] pointer-events-none shadow-[0_0_20px_rgba(30,215,96,0.6)]"
-              />
-              <motion.div
-                initial={{ x: mousePos.x - 10, y: mousePos.y - 10, scale: 0.3, opacity: 1 }}
-                animate={{ scale: 3, opacity: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.8, delay: 0.05, ease: "easeOut" }}
-                className="fixed w-5 h-5 border-2 border-brand/60 rounded-full z-[100] pointer-events-none"
-              />
-              <motion.div
-                initial={{ x: mousePos.x - 2, y: mousePos.y - 2, scale: 1, opacity: 1 }}
-                animate={{ scale: 0, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="fixed w-1 h-1 bg-white rounded-full z-[101] pointer-events-none"
-              />
-            </>
-          )}
-        </AnimatePresence>
-        <motion.div
-          animate={{ 
-            x: mousePos.x - 3, 
-            y: mousePos.y - 3,
-          }}
-          className="fixed w-1.5 h-1.5 bg-brand rounded-full z-[100] hidden md:block pointer-events-none"
-        />
-
-        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-brand/5 blur-[150px] rounded-full animate-pulse" />
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-brand/5 blur-[150px] rounded-full" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/5 blur-[150px] rounded-full" />
       </div>
       {/* Sidebar */}
@@ -564,31 +377,84 @@ export default function App() {
                   <p className="px-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">History</p>
                   <AnimatePresence mode="popLayout">
                     {threads.map((thread, i) => (
-                      <motion.button
+                      <motion.div
                         key={thread.id}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.05 }}
-                        onClick={() => {
-                          setActiveThreadId(thread.id);
-                          if (window.innerWidth < 768) setIsSidebarOpen(false);
-                        }}
-                        className={cn(
-                          "w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all",
-                          activeThreadId === thread.id 
-                            ? "bg-brand/10 text-brand ring-1 ring-brand/20 shadow-lg shadow-brand/5" 
-                            : "hover:bg-neutral-900 text-neutral-400 hover:text-neutral-200"
-                        )}
+                        className="group relative"
                       >
-                        <MessageSquare size={16} className={cn("shrink-0", activeThreadId === thread.id ? "text-brand" : "text-neutral-600")} />
-                        <span className="text-sm truncate font-medium">{thread.title}</span>
-                      </motion.button>
+                        <button
+                          onClick={() => {
+                            setActiveThreadId(thread.id);
+                            if (window.innerWidth < 768) setIsSidebarOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all",
+                            activeThreadId === thread.id 
+                              ? "bg-brand/10 text-brand ring-1 ring-brand/20 shadow-lg shadow-brand/5" 
+                              : "hover:bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+                          )}
+                        >
+                          <MessageSquare size={16} className={cn("shrink-0", activeThreadId === thread.id ? "text-brand" : "text-neutral-600")} />
+                          <span className="text-sm truncate font-medium pr-12">{thread.title}</span>
+                          {thread.isPinned && (
+                            <Pin size={10} className="absolute right-4 top-1/2 -translate-y-1/2 text-brand fill-brand opacity-100 group-hover:opacity-0 transition-opacity" />
+                          )}
+                        </button>
+                        
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => handleTogglePin(e, thread.id, !!thread.isPinned)}
+                            className="p-1.5 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-brand transition-colors"
+                            title={thread.isPinned ? "Unpin" : "Pin"}
+                          >
+                            <Pin size={14} className={cn(thread.isPinned ? "fill-brand text-brand" : "")} />
+                          </button>
+                          <button 
+                            onClick={(e) => handleDeleteThread(e, thread.id)}
+                            className="p-1.5 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-red-500 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </motion.div>
                     ))}
                   </AnimatePresence>
                 </div>
 
-              <div className="pt-4 border-t border-white/5 mt-auto">
-                <div className="pt-2 text-center group cursor-help">
+                <div className="pt-4 border-t border-white/5 mt-auto">
+                  {user && (
+                    <div className="mb-4">
+                      <div className="flex items-center gap-3 px-4 py-3 bg-neutral-900/50 rounded-xl mb-2">
+                        <div className="w-8 h-8 rounded-full bg-brand/20 flex items-center justify-center overflow-hidden border border-brand/20">
+                          {user.photoURL ? (
+                            <img src={user.photoURL} alt={user.displayName || ''} className="w-full h-full object-cover" />
+                          ) : (
+                            <UserIcon size={16} className="text-brand" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate text-white">{user.displayName || 'User'}</p>
+                          <p className="text-[10px] text-neutral-500 truncate">{user.email}</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={async () => {
+                          if (confirm("আপনি কি লগআউট করতে চান?")) {
+                            await logout();
+                            startNewChat();
+                          }
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-neutral-400 hover:text-red-400 hover:bg-red-400/5 transition-all rounded-lg group"
+                      >
+                        <LogOut size={16} className="group-hover:scale-110 transition-transform" />
+                        <span className="text-sm font-medium">Logout</span>
+                      </button>
+                    </div>
+                  )}
+                  <div className="pt-2 text-center group cursor-help">
                   <p className="text-[9px] text-neutral-600 font-bold uppercase tracking-widest transition-colors group-hover:text-neutral-400">
                     Powered by <a href="https://www.instagram.com/_arfan_arfu19/" target="_blank" rel="noopener noreferrer" className="text-brand group-hover:animate-pulse hover:underline">Arfu</a>
                   </p>
@@ -619,28 +485,11 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => {
-                if (isSpeaking) {
-                  stopSpeaking();
-                } else {
-                  setAutoVoice(!autoVoice);
-                }
-              }}
-              className={cn(
-                "p-2 rounded-lg transition-all",
-                (autoVoice || isSpeaking) ? "bg-brand/10 text-brand" : "text-neutral-500 hover:text-white"
-              )}
-            >
-              {(autoVoice || isSpeaking) ? <Volume2 size={20} className={isSpeaking ? "animate-pulse" : ""} /> : <VolumeX size={20} />}
-            </button>
             {activeThreadId && (
               <button 
-                onClick={() => {
-                  historyService.deleteChat(activeThreadId);
-                  startNewChat();
-                }}
+                onClick={(e) => handleDeleteThread(e, activeThreadId)}
                 className="p-2 text-neutral-500 hover:text-red-400 transition-colors"
+                title="Delete Chat"
               >
                 <Trash2 size={20} />
               </button>
@@ -759,15 +608,7 @@ export default function App() {
                       >
                         <Copy size={14} />
                       </button>
-                      {msg.role === 'assistant' && msg.content && (
-                        <button 
-                          onClick={() => speakText(msg.content)} 
-                          className="p-1.5 text-neutral-500 hover:text-brand bg-neutral-900/50 rounded-lg border border-white/5 transition-all hover:scale-110"
-                          title="Speak"
-                        >
-                          <Volume2 size={14} />
-                        </button>
-                      )}
+                      
                       <button 
                         onClick={() => shareContent(msg)} 
                         className="p-1.5 text-neutral-500 hover:text-brand bg-neutral-900/50 rounded-lg border border-white/5 transition-all hover:scale-110"
@@ -848,15 +689,6 @@ export default function App() {
 
               <div className="flex items-center gap-1 md:gap-2 pr-1.5 md:pr-2">
                 <button 
-                  onClick={toggleListening}
-                  className={cn(
-                    "p-2.5 md:p-3 rounded-2xl transition-all shadow-lg active:scale-90 shrink-0",
-                    isListening ? "bg-red-500 text-white animate-pulse shadow-red-500/20" : "bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10"
-                  )}
-                >
-                  {isListening ? <MicOff size={18} /> : <Mic size={18} />}
-                </button>
-                <button 
                   onClick={() => handleSend()}
                   disabled={isLoading || (!input.trim() && !selectedImage)}
                   className="p-2.5 md:p-3 bg-brand text-white rounded-2xl shadow-lg shadow-brand/20 hover:scale-110 active:scale-90 disabled:opacity-30 transition-all shrink-0 hover:bg-brand/90"
@@ -869,21 +701,7 @@ export default function App() {
         </div>
       </main>
 
-      <audio ref={audioRef} className="hidden" />
-
-      {/* Voice feedback overlay */}
-      <AnimatePresence>
-        {isSpeaking && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed top-20 right-6 z-50 glass px-4 py-3 rounded-full flex items-center gap-3 border-brand shadow-2xl">
-            <div className="flex gap-1 h-3 items-end">
-              {[...Array(4)].map((_, i) => (
-                <motion.div key={i} animate={{ height: [4, 12, 6, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }} className="w-1 bg-brand rounded-full" />
-              ))}
-            </div>
-            <span className="text-xs font-bold text-brand uppercase tracking-widest">Speaking</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Voice feedback overlay removed */}
     </div>
   );
 }
